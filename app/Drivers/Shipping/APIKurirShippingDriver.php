@@ -55,41 +55,47 @@ class APIKurirShippingDriver implements ShippingDriverInterface
         ShippingServiceData $shipping_service,
     ) : ?ShippingData
     {
-        $response = Http::withBasicAuth(
-            config('shipping.api_kurir.username'),
-            config('shipping.api_kurir.password'),
-        )->post('https://sandbox.apikurir.id/shipments/v1/open-api/rates', [
-            'isUseInsurance' => true,
-            'isPickUp' => true,
-            'isCod' => false,
-            'weight' => $cart->total_weight,
-            'packagePrice' => $cart->total,
-            'origin' => [
-                'postalCode' => $origin->postal_code
-                ],
-            'destination' => [
-                'postalCode' => $destination->postal_code
-                ],
-            'logistics' => [$shipping_service->courier],
-            'service' => [$shipping_service->service],
-        ]);
+        try{
+            $response = Http::timeout(7)
+                ->withoutVerifying()
+                ->withBasicAuth(config('shipping.api_kurir.username'),config('shipping.api_kurir.password'))
+                ->post('https://sandbox.apikurir.id/shipments/v1/open-api/rates', [
+                'isUseInsurance' => true,
+                'isPickUp' => true,
+                'isCod' => false,
+                'weight' => $cart->total_weight,
+                'packagePrice' => $cart->total,
+                'origin' => ['postalCode' => $origin->postal_code],
+                'destination' => ['postalCode' => $destination->postal_code],
+                'logistics' => [$shipping_service->courier],
+                'service' => [$shipping_service->service],
+            ]);
 
-        $data = $response = collect('data')->flatten(1)->values()->first();
-        if(empty($data)){
+            if($response->failed()) return null;
+
+            $results = $response->json('data');
+
+
+            $data = is_array($results) ? collect($results)->first() : null;
+
+            if(! $data){
+                return null;
+            }
+
+            $est = data_get($data, 'minDuration') . ' - ' . data_get($data, 'maxDuration') . ' ' . data_get($data, 'durationType');
+            return new ShippingData(
+                driver: $this->driver,
+                courier: $shipping_service->courier,
+                service: $shipping_service->service,
+                estimated_delivery: $est,
+                cost: (float) data_get($data, 'price'),
+                weight: (int) data_get($data, 'weight'),
+                origin: $origin,
+                destination: $destination,
+                logo_url: data_get($data, 'logoUrl')
+            );
+        } catch (\Exception $e){
             return null;
         }
-
-        $est = data_get($data, 'minDuration') . ' - ' . data_get($data, 'maxDuration') . ' - ' . data_get($data, 'durationType');
-        return new ShippingData(
-            $this->driver,
-            $shipping_service->courier,
-            $shipping_service->service,
-            $est,
-            data_get($data, 'price'),
-            data_get($data, 'weight'),
-            $origin,
-            $destination,
-            data_get($data, 'logoUrl')
-        );
     }
 }

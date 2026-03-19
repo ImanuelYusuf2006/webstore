@@ -67,4 +67,20 @@ class SalesOrderService
         $sales_order->status->transitionTo(Progress::class);
     }
 
+    // Pastikan use App\Models\SalesOrder; di bagian atas
+
+    public function updatePaymentPayload(SalesOrderData $sales_order, array $payload): SalesOrderData
+    {
+        // Update data di database
+        \App\Models\SalesOrder::where('trx_id', $sales_order->trx_id)->update([
+            'payment_payload' => $payload,
+            'status'          => Pending::class, // default
+        ]);
+
+        // Kembalikan data terbaru dalam bentuk Data Object
+        $updatedModel = \App\Models\SalesOrder::where('trx_id', $sales_order->trx_id)->first();
+
+        return SalesOrderData::fromModel($updatedModel);
+    }
+
 }
